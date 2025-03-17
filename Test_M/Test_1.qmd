@@ -33,13 +33,13 @@ unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr == "2023")
 
 ## Plotting Data
 
-```{r}
+```{r fig.width=8, fig.height=6}
 ggplot() +
   geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
-  geom_sf(data = strassen_wege_hvs, color = "blue", size = 1, alpha = 0.3) +
-  geom_sf(data = velorouten, color = "green", size = 1, alpha = 0.3) +
+  geom_sf(data = strassen_wege_hvs, color = "purple", size = 10, alpha = 0.3) +
+  geom_sf(data = velorouten, color = "darkgreen", size = 10, alpha = 0.3) +
   geom_sf(data = unfaelle_velo_23, color = "red", size = 0.1) +
-  theme_minimal() +
-  labs(title = "Comparison of Veloroutes and Mainstreet (2023)") +
+  theme_void() +
+  labs(title = "Comparison of Veloroutes and Mainstreet (Accidents 2023)") +
   theme(legend.position = "none")
 ```
