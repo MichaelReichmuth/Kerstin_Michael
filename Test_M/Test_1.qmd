@@ -15,19 +15,31 @@ library(jsonlite)
 
 ## Loading and Cleaning Data
 
-Loading two different dataframes. GeoJSON Format
+Loading dataframes (GeoJSON Format)
 
 ```{r}
 strassen_wege <- st_read("strassen_wege.geojson")
 velorouten <- st_read("velorouten.geojson")
+unfaelle <- st_read("unfaelle.geojson")
 ```
+
+Specific dataframes:
+
+```{r}
+strassen_wege_hvs <- strassen_wege %>% filter(snh == "HVS")
+
+unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr == "2023")
+```
+
+## Plotting Data
 
 ```{r}
 ggplot() +
   geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
-  geom_sf(data = velorouten, color = "blue", size = 1, alpha = 0.5) +
+  geom_sf(data = strassen_wege_hvs, color = "blue", size = 1, alpha = 0.3) +
+  geom_sf(data = velorouten, color = "green", size = 1, alpha = 0.3) +
+  geom_sf(data = unfaelle_velo_23, color = "red", size = 0.1) +
   theme_minimal() +
-  labs(title = "Comparison of Velorouten and Strassen Wege") +
-  theme_minimal() +
-  theme(legend.position = "none")  # Hide legend for better clarity
+  labs(title = "Comparison of Veloroutes and Mainstreet (2023)") +
+  theme(legend.position = "none")
 ```
