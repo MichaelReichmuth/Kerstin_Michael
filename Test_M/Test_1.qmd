@@ -18,6 +18,7 @@ library(jsonlite)
 Loading dataframes (GeoJSON Format)
 
 ```{r}
+#| echo: false
 strassen_wege <- st_read("strassen_wege.geojson")
 velorouten <- st_read("velorouten.geojson")
 unfaelle <- st_read("unfaelle.geojson")
@@ -28,13 +29,19 @@ Specific dataframes:
 ```{r}
 strassen_wege_hvs <- strassen_wege %>% filter(snh == "HVS")
 
-unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr == "2023")
+unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" 
+                                        & jahr == "2023"
+                                        & typ != "Fussgängerunfall"
+                                        & typ != "Parkierunfall")
+# 122 Unfälle
 ```
 
 ## Plotting Data
 
-```{r fig.width=8, fig.height=6}
-ggplot() +
+```{r}
+#| fig-height: 6
+#| fig-width: 8
+p <- ggplot() +
   geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
   geom_sf(data = strassen_wege_hvs, color = "purple", size = 10, alpha = 0.3) +
   geom_sf(data = velorouten, color = "darkgreen", size = 10, alpha = 0.3) +
@@ -42,4 +49,6 @@ ggplot() +
   theme_void() +
   labs(title = "Comparison of Veloroutes and Mainstreet (Accidents 2023)") +
   theme(legend.position = "none")
+
+print(p)
 ```
