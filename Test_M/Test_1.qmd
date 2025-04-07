@@ -28,6 +28,7 @@ Specific dataframes:
 ```{r}
 strassen_wege_hvs <- strassen_wege %>% filter(snh == "HVS")
 
+unfaelle_velo <- unfaelle %>% filter(fahrrd_bet == "true")
 unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr == "2023")
 ```
 
@@ -42,4 +43,25 @@ ggplot() +
   theme_void() +
   labs(title = "Comparison of Veloroutes and Mainstreet (Accidents 2023)") +
   theme(legend.position = "none")
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
+  geom_sf(data = strassen_wege_hvs, color = "purple", size = 1, alpha = 0.3) +
+  geom_sf(data = velorouten, color = "darkgreen", size = 1, alpha = 0.3) +
+  geom_sf(data = unfaelle_velo, color = "red", size = 0.1) +
+  theme_void() +
+  facet_wrap(~jahr) +
+  labs(title = "Comparison of Veloroutes and Mainstreet") +
+  theme(legend.position = "none")
+```
+
+```{r}
+table(unfaelle$schwere, unfaelle$fahrrd_bet)
+```
+
+```{r}
+ggplot(unfaelle, aes(x= fahrrd_bet, fill = schwere)) +
+  geom_bar(position = "fill")
 ```
