@@ -13,6 +13,8 @@ library(dplyr)
 library(jsonlite)
 library(lwgeom)
 library(readxl)
+library(scales)
+
 library(zoo)
 ```
 
@@ -99,6 +101,7 @@ print(p)
 
 ggsave("accident_matching.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 ```
+
 #### Add street name
 
 ```{r}
@@ -112,6 +115,7 @@ unfaelle_clean <- unfaelle_with_match %>%
 
 table(unfaelle_clean$name)
 ```
+
 #### Backtrack Implementation
 
 ```{r}
@@ -120,20 +124,67 @@ unfaelle_clean <- unfaelle_clean %>%
     date_accident = as.Date(paste0(jahr, "-", monat, "-01")),
     ym_accident = as.yearmon(date_accident),
     ym_reference = as.yearmon("2021-04"),           #anpassen sobald bekannt
-    diff = ym_accident - ym_reference)
+    diff = ym_accident - ym_reference,
+    diff_months = (ym_accident - ym_reference) * 12)
 
 ```
 
 ## Plotting Data
 
 ```{r}
-unfaelle_clean %>%
+table(unfaelle_clean$on_velostrasse, unfaelle_clean$fahrrd_bet)
+```
+
+```{r}
+p <- unfaelle_clean %>%
   filter(on_velostrasse == TRUE) %>%
-  group_by(diff) %>%
-  mutate(amount = length(ID)) %>%
-ggplot(aes(diff, amount)) +
-  geom_point() +
+ggplot(aes(diff_months)) +
+  geom_histogram(binwidth = 6, fill = "pink", color = "grey30") +
+  geom_vline(xintercept = 0, color = "red", linetype = 1, size = 0.5) +
+  geom_text(aes(x = 6, y = 15, label = "Transition to velostreet"), 
+            vjust = -1, hjust = 1.2, color = "red", size = 4) +
+  scale_x_continuous(breaks = seq(floor(min(unfaelle_clean$diff_months) / 12) * 12, 
+                 ceiling(max(unfaelle_clean$diff_months) / 12) * 12, 
+                 by = 12)) +
+  xlab("Months relative to velostreet transition") +
+  ylab("Amount of Accidents") +
   theme_minimal()
+
+print(p)
+
+ggsave("Plot_1.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
+ggplot(unfaelle_clean, aes(date_accident)) +
+  geom_histogram()
+```
+
+```{r}
+
+p <- unfaelle_clean %>%
+  group_by(date_accident) %>%
+  summarise(relative_ov = sum(on_velostrasse == TRUE) / n()) %>%
+ggplot(aes(date_accident, relative_ov)) +
+  geom_point() +
+  geom_smooth(color = "blue") +
+  geom_vline(xintercept = as.Date("2021-04-01"), color = "red", linetype = "dashed", size = 0.5) +
+  geom_text(aes(x = as.Date("2021-04-01"), y = 0.1, label = "Estimated average year of implementation"), color = "red", vjust = -0.5, hjust = 0.5, size = 3) +
+  scale_x_date(
+    breaks = seq(from = min(unfaelle_clean$date_accident), 
+                 to = max(unfaelle_clean$date_accident), 
+                 by = "2 years"),  # Set breaks every 2 years
+    date_labels = "%Y"  # Format the labels as years
+) +
+  scale_y_continuous(labels = scales::percent) +
+  ggtitle("Proportion of accidents on velostrassen (before and after implementation)") +
+  xlab("") +
+  ylab("") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_2.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 ```
 
 ```{r}
