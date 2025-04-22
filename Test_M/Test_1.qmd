@@ -21,6 +21,8 @@ Loading dataframes (GeoJSON Format)
 strassen_wege <- st_read("strassen_wege.geojson")
 velorouten <- st_read("velorouten.geojson")
 unfaelle <- st_read("unfaelle.geojson")
+
+velostadtplan <- st_read("velostadtplan.geojson")
 ```
 
 Specific dataframes:
@@ -30,9 +32,60 @@ strassen_wege_hvs <- strassen_wege %>% filter(snh == "HVS")
 
 unfaelle_velo <- unfaelle %>% filter(fahrrd_bet == "true")
 unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr == "2023")
+
+velostrassen <- velostadtplan %>% filter(gml_id == "Velostrasse")
+```
+
+```{r}
+# 1. Erstelle eine Buffer-Geometrie um jede Straße
+buffered <- velostrassen %>%
+  mutate(buffer_geom = st_buffer(geometry, dist = 5))
+
+# 2. Erstelle eine Intersections-Matrix
+intersections <- st_intersects(buffered$buffer_geom)
+
+# 3. Baue Gruppen aus diesen Überschneidungen
+#    (jede Gruppe bekommt eine ID)
+get_group_ids <- function(intersections_list) {
+  group_ids <- rep(NA_integer_, length(intersections_list))
+  group_counter <- 1
+  for (i in seq_along(intersections_list)) {
+    if (is.na(group_ids[i])) {
+      group_ids[unlist(intersections_list[i])] <- group_counter
+      group_counter <- group_counter + 1
+    }
+  }
+  return(group_ids)
+}
+
+group_ids <- get_group_ids(intersections)
+
+# 4. Füge die Gruppen-IDs in die Daten ein
+buffered$group_id <- group_ids
+
+# 5. Gruppiere und fasse zusammen (z. B. für vereinfachte Straßenlinien)
+collapsed_streets <- buffered %>%
+  group_by(group_id) %>%
+  summarise(geometry = st_union(geometry)) %>%
+  mutate(geometry = st_line_merge(geometry)) %>%
+  st_as_sf()
+```
+
+```{r}
+
 ```
 
 ## Plotting Data
+
+```{r}
+plot <- ggplot() +
+  geom_sf(data = buffered, aes(group = group_id, fill = group_id), size = 10, alpha = 0.3) +
+  theme_void() +
+  labs(title = "Velostrassen") +
+  theme(legend.position = "none")
+
+ggsave("velostrassen.jpeg", plot = plot, width = 12, height = 8, dpi = 300)
+```
 
 ```{r fig.width=8, fig.height=6}
 ggplot() +
@@ -46,15 +99,18 @@ ggplot() +
 ```
 
 ```{r}
-ggplot() +
+unfaelle_velo_1 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr < 2017)
+unfaelle_velo_2 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr >= 2017)
+
+plot <- ggplot() +
   geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
-  geom_sf(data = strassen_wege_hvs, color = "purple", size = 1, alpha = 0.3) +
-  geom_sf(data = velorouten, color = "darkgreen", size = 1, alpha = 0.3) +
-  geom_sf(data = unfaelle_velo, color = "red", size = 0.1) +
+  geom_sf(data = unfaelle_velo_1, color = "red", size = 0.1) +
+  geom_sf(data = unfaelle_velo_2, color = "green", size = 0.1) +
   theme_void() +
-  facet_wrap(~jahr) +
   labs(title = "Comparison of Veloroutes and Mainstreet") +
   theme(legend.position = "none")
+
+ggsave("velorouten_plot_highres.jpeg", plot = plot, width = 12, height = 8, dpi = 300)
 ```
 
 ```{r}
