@@ -11,6 +11,9 @@ library(sf)
 library(ggplot2)
 library(dplyr)
 library(jsonlite)
+library(lwgeom)
+library(readxl)
+library(zoo)
 ```
 
 ## Loading and Cleaning Data
@@ -26,72 +29,119 @@ unfaelle <- st_read("unfaelle.geojson")
 velostadtplan <- st_read("velostadtplan.geojson")
 ```
 
-Specific dataframes:
+#### Cleaning "velostrassen"
 
 ```{r}
-strassen_wege_hvs <- strassen_wege %>% filter(snh == "HVS")
-
-<<<<<<< HEAD
-unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" 
-                                        & jahr == "2023"
-                                        & typ != "Fussgängerunfall"
-                                        & typ != "Parkierunfall")
-# 122 Unfälle
-=======
-unfaelle_velo <- unfaelle %>% filter(fahrrd_bet == "true")
-unfaelle_velo_23 <- unfaelle %>% filter(fahrrd_bet == "true" & jahr == "2023")
-
 velostrassen <- velostadtplan %>% filter(gml_id == "Velostrasse")
 ```
 
 ```{r}
-# 1. Erstelle eine Buffer-Geometrie um jede Straße
-buffered <- velostrassen %>%
-  mutate(buffer_geom = st_buffer(geometry, dist = 5))
+velostrassen_union <- velostrassen %>%
+  st_union() %>%
+  st_line_merge()
 
-# 2. Erstelle eine Intersections-Matrix
-intersections <- st_intersects(buffered$buffer_geom)
+# Schritt 2: Wieder aufteilen in einzelne Linien
+velostrassen_cleaned <- st_cast(velostrassen_union, "LINESTRING") %>%
+  st_as_sf() %>%
+  mutate(temp_ID = paste0(row_number()))
 
-# 3. Baue Gruppen aus diesen Überschneidungen
-#    (jede Gruppe bekommt eine ID)
-get_group_ids <- function(intersections_list) {
-  group_ids <- rep(NA_integer_, length(intersections_list))
-  group_counter <- 1
-  for (i in seq_along(intersections_list)) {
-    if (is.na(group_ids[i])) {
-      group_ids[unlist(intersections_list[i])] <- group_counter
-      group_counter <- group_counter + 1
-    }
-  }
-  return(group_ids)
-}
+```
 
-group_ids <- get_group_ids(intersections)
+Clear copies
 
-# 4. Füge die Gruppen-IDs in die Daten ein
-buffered$group_id <- group_ids
+```{r fig.width=8, fig.height=6}
+velostrassen_cleaned_selection <- velostrassen_cleaned %>% filter(temp_ID %in% c(1, 3, 5, 6, 9, 11, 13, 17, 21, 22, 23, 29, 39, 45, 54, 58, 41, 30 , 37, 34, 43, 23, 56, 47, 49, 51, 26))
 
-# 5. Gruppiere und fasse zusammen (z. B. für vereinfachte Straßenlinien)
-collapsed_streets <- buffered %>%
-  group_by(group_id) %>%
-  summarise(geometry = st_union(geometry)) %>%
-  mutate(geometry = st_line_merge(geometry)) %>%
-  st_as_sf()
+p <- ggplot() +
+  geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
+  geom_sf(data = velostrassen_cleaned_selection, aes(color = temp_ID), size = 1, alpha = 0.3) +
+  geom_sf_text(data = velostrassen_cleaned_selection, aes(label = temp_ID), size = 1, color = "black", check_overlap = FALSE) +
+  theme_void() +
+  theme(legend.position = "none")
+
+print(p)
+
+ggsave("velorouten_grouped_selection.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+
+remove(velostrassen_cleaned, velostrassen_union)
+```
+
+#### Combine with "unfaelle" Dataset
+
+```{r}
+# Sicherheitscheck: gleiche CRS (Koordinatensystem)
+unfaelle <- st_transform(unfaelle, st_crs(velostrassen_cleaned_selection))
+
+# Optional: etwas Toleranzradius, falls Punkte nicht exakt auf Linie liegen (z.B. 10 Meter)
+buffered_velo <- st_buffer(velostrassen_cleaned_selection, dist = 15)
+
+# Räumlicher Join
+unfaelle_with_match <- st_join(unfaelle, buffered_velo["temp_ID"])
+
+# Neue Variable: TRUE/FALSE
+unfaelle_with_match <- unfaelle_with_match %>%
+  mutate(
+    on_velostrasse = !is.na(temp_ID)  # TRUE wenn er zugewiesen wurde
+  )
+
+table(unfaelle_with_match$temp_ID)
 ```
 
 ```{r}
+p <- ggplot() +
+  geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
+  geom_sf(data = velostrassen_cleaned_selection, aes(color = temp_ID), size = 1, alpha = 0.3) +
+  geom_sf(data = unfaelle_with_match, aes(color = temp_ID), size = 0.1, alpha = 0.5) +
+  theme_void() +
+  theme(legend.position = "none")
 
->>>>>>> 44acd0560ac41c474fd2c1b2b8cdc1faa1db859d
+print(p)
+
+ggsave("accident_matching.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+#### Add street name
+
+```{r}
+velostrassen_ID_sheet <- read_excel("velostrassen_ID_sheet.xlsx")
+
+unfaelle_with_match$temp_ID <- as.numeric(unfaelle_with_match$temp_ID)
+
+# left-join
+unfaelle_clean <- unfaelle_with_match %>%
+  left_join(velostrassen_ID_sheet, by = "temp_ID")
+
+table(unfaelle_clean$name)
+```
+#### Backtrack Implementation
+
+```{r}
+unfaelle_clean <- unfaelle_clean %>%
+  mutate(
+    date_accident = as.Date(paste0(jahr, "-", monat, "-01")),
+    ym_accident = as.yearmon(date_accident),
+    ym_reference = as.yearmon("2021-04"),           #anpassen sobald bekannt
+    diff = ym_accident - ym_reference)
+
 ```
 
 ## Plotting Data
 
 ```{r}
-<<<<<<< HEAD
+unfaelle_clean %>%
+  filter(on_velostrasse == TRUE) %>%
+  group_by(diff) %>%
+  mutate(amount = length(ID)) %>%
+ggplot(aes(diff, amount)) +
+  geom_point() +
+  theme_minimal()
+```
+
+```{r}
+
 #| fig-height: 6
 #| fig-width: 8
 p <- ggplot() +
-=======
+
 plot <- ggplot() +
   geom_sf(data = buffered, aes(group = group_id, fill = group_id), size = 10, alpha = 0.3) +
   theme_void() +
@@ -103,7 +153,6 @@ ggsave("velostrassen.jpeg", plot = plot, width = 12, height = 8, dpi = 300)
 
 ```{r fig.width=8, fig.height=6}
 ggplot() +
->>>>>>> 44acd0560ac41c474fd2c1b2b8cdc1faa1db859d
   geom_sf(data = strassen_wege, color = "grey", size = 1, alpha = 0.5) +
   geom_sf(data = strassen_wege_hvs, color = "purple", size = 10, alpha = 0.3) +
   geom_sf(data = velorouten, color = "darkgreen", size = 10, alpha = 0.3) +
