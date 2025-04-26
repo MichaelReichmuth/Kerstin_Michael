@@ -24,6 +24,10 @@ Loading dataframes (GeoJSON Format)
 
 ```{r}
 #| echo: false
+#| message: false
+#| warning: false
+#| output: false
+
 strassen_wege <- st_read("strassen_wege.geojson")
 velorouten <- st_read("velorouten.geojson")
 unfaelle <- st_read("unfaelle.geojson")
@@ -85,8 +89,6 @@ unfaelle_with_match <- unfaelle_with_match %>%
   mutate(
     on_velostrasse = !is.na(temp_ID)  # TRUE wenn er zugewiesen wurde
   )
-
-table(unfaelle_with_match$temp_ID)
 ```
 
 ```{r}
@@ -122,30 +124,36 @@ table(unfaelle_clean$name)
 unfaelle_clean <- unfaelle_clean %>%
   mutate(
     date_accident = as.Date(paste0(jahr, "-", monat, "-01")),
-    ym_accident = as.yearmon(date_accident),
-    ym_reference = as.yearmon("2021-04"),           #anpassen sobald bekannt
+    ym_accident = as.yearmon(date_accident))
+
+
+unfaelle_clean_velostrasse <- unfaelle_clean %>%
+  filter(on_velostrasse == TRUE) %>%
+  mutate(date_reference = as.Date(paste0(year, "-", month, "-01")),
+    ym_reference = as.yearmon(date_reference),
     diff = ym_accident - ym_reference,
-    diff_months = (ym_accident - ym_reference) * 12)
+    diff_months = round((ym_accident - ym_reference) * 12))
 
 ```
 
 ## Plotting Data
 
 ```{r}
-table(unfaelle_clean$on_velostrasse, unfaelle_clean$fahrrd_bet)
+table(unfaelle_clean_velostrasse$diff_months)
 ```
 
 ```{r}
-p <- unfaelle_clean %>%
+p <- unfaelle_clean_velostrasse %>%
   filter(on_velostrasse == TRUE) %>%
 ggplot(aes(diff_months)) +
-  geom_histogram(binwidth = 6, fill = "pink", color = "grey30") +
+  geom_histogram(binwidth = 12, fill = "pink", color = "grey30") +
   geom_vline(xintercept = 0, color = "red", linetype = 1, size = 0.5) +
-  geom_text(aes(x = 6, y = 15, label = "Transition to velostreet"), 
+  geom_text(aes(x = 10, y = 20, label = "Velostreet transition"), 
             vjust = -1, hjust = 1.2, color = "red", size = 4) +
-  scale_x_continuous(breaks = seq(floor(min(unfaelle_clean$diff_months) / 12) * 12, 
-                 ceiling(max(unfaelle_clean$diff_months) / 12) * 12, 
-                 by = 12)) +
+  scale_x_continuous(breaks = seq(floor(min(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+                                  ceiling(max(unfaelle_clean_velostrasse$diff_months) / 12) *
+                                    12, 
+                                  by = 12)) +
   xlab("Months relative to velostreet transition") +
   ylab("Amount of Accidents") +
   theme_minimal()
@@ -156,8 +164,71 @@ ggsave("Plot_1.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 ```
 
 ```{r}
+p <- unfaelle_clean_velostrasse %>%
+  group_by(diff_months, name) %>%
+  summarise(count = n()) %>%
+ggplot(aes(diff_months, count)) +
+  geom_point(aes(color = name)) +
+  geom_smooth() +
+  geom_vline(xintercept = 0, color = "red", linetype = 1, size = 0.5) +
+  geom_text(aes(x = 10, y = 4, label = "Velostreet transition"), 
+            vjust = -1, hjust = 1.2, color = "red", size = 4) +
+  scale_x_continuous(breaks = seq(floor(min(unfaelle_clean_velostrasse$diff_months) / 12) * 12, 
+                 ceiling(max(unfaelle_clean_velostrasse$diff_months) / 12) * 12, 
+                 by = 12)) +
+  xlab("Months relative to velostreet transition") +
+  ylab("Amount of Accidents") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_1.1.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
+p <- unfaelle_clean_velostrasse %>%
+  filter(diff_months >= -60 & diff_months <= 24) %>%
+  mutate(diff_months_group = floor(diff_months / 3) * 3) %>%   
+  group_by(diff_months_group) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(after_transition = diff_months_group >= 0) %>%
+  ggplot(aes(diff_months_group, count)) +
+  geom_point() +
+  geom_smooth(aes(group = after_transition), method = "lm") +
+  geom_vline(xintercept = 0, color = "red", linetype = 1, size = 0.5) +
+  geom_text(aes(x = 10, y = 7, label = "Velostreet transition"), 
+            vjust = -1, hjust = 1.2, color = "red", size = 4) +
+  scale_x_continuous(
+    breaks = seq(
+      floor(min(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+      ceiling(max(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+      by = 12
+    )
+  ) +
+  ggtitle("Amount of accidents across all velostrassen (before and after transition)") +
+  xlab("Months relative to velostreet transition (binned by 3)") +
+  ylab("Amount of Accidents across all velostrassen") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_1.2.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
 ggplot(unfaelle_clean, aes(date_accident)) +
   geom_histogram()
+
+unfaelle_clean %>%
+  filter(fahrrd_bet == "true") %>%
+  ggplot(aes(date_accident)) +
+  geom_histogram() +
+  scale_x_date(
+    breaks = seq(from = min(unfaelle_clean$date_accident), 
+                 to = max(unfaelle_clean$date_accident), 
+                 by = "2 years"),  # Set breaks every 2 years
+    date_labels = "%Y"  # Format the labels as years
+)
 ```
 
 ```{r}
@@ -167,7 +238,7 @@ p <- unfaelle_clean %>%
   summarise(relative_ov = sum(on_velostrasse == TRUE) / n()) %>%
 ggplot(aes(date_accident, relative_ov)) +
   geom_point() +
-  geom_smooth(color = "blue") +
+  geom_smooth() +
   geom_vline(xintercept = as.Date("2021-04-01"), color = "red", linetype = "dashed", size = 0.5) +
   geom_text(aes(x = as.Date("2021-04-01"), y = 0.1, label = "Estimated average year of implementation"), color = "red", vjust = -0.5, hjust = 0.5, size = 3) +
   scale_x_date(
@@ -187,22 +258,72 @@ print(p)
 ggsave("Plot_2.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 ```
 
-## Alte Plots
+## Traffic count data
+
+Underlying question: Is the increase in accidents due to more cyclists around Basel?
 
 ```{r}
-
-#| fig-height: 6
-#| fig-width: 8
-p <- ggplot() +
-
-plot <- ggplot() +
-  geom_sf(data = buffered, aes(group = group_id, fill = group_id), size = 10, alpha = 0.3) +
-  theme_void() +
-  labs(title = "Velostrassen") +
-  theme(legend.position = "none")
-
-ggsave("velostrassen.jpeg", plot = plot, width = 12, height = 8, dpi = 300)
+zaehlung <- read.csv2("zaehlung.csv")
 ```
+
+```{r}
+table(zaehlung$SiteName, zaehlung$Year)
+```
+
+```{r}
+zaehlung <- zaehlung %>%
+  mutate(ym = as.yearmon(paste0(Year, "-", Month)))
+
+# Sites mit mehr als 1 Messung im Jahr 2011 auswählen
+sites_with_multiple_measurements <- zaehlung %>%
+  filter(Year == 2011) %>%
+  group_by(SiteName) %>%
+  summarise(count = n()) %>%
+  filter(count > 1) %>%
+  pull(SiteName)
+
+# Gesamten Datensatz auf diese Sites filtern
+zaehlung_since_2011 <- zaehlung %>%
+  filter(SiteName %in% sites_with_multiple_measurements)
+
+```
+
+```{r}
+p <- zaehlung_since_2011 %>%
+  filter(TrafficType == "Velo") %>%
+  group_by(ym, SiteName) %>%
+  summarise(Total_per_Street = sum(Total)) %>%
+ggplot(aes(ym, Total_per_Street, group = SiteName, color = SiteName)) +
+  geom_point() +
+  geom_smooth()
+
+ggsave("Plot_3.jpeg", plot = p, width = 20, height = 8, dpi = 600)
+
+print(p)
+```
+
+```{r}
+zaehlung_selection <- zaehlung_since_2011 %>%
+  filter(!(SiteCode %in% c(659, 660)))
+
+table(zaehlung_selection$SiteName, zaehlung_selection$Year)
+```
+
+```{r}
+p <- zaehlung_selection %>%
+  filter(TrafficType == "Velo") %>%
+  group_by(ym, SiteName) %>%
+  summarise(Total_per_Meassurement = sum(Total) / n()) %>%
+ggplot(aes(ym, mean_Total_per_Meassure_across_all)) +
+  geom_point() +
+  geom_smooth()
+
+ggsave("Plot_4.jpeg", plot = p, width = 20, height = 8, dpi = 600)
+```
+
+
+
+## Old Plots
 
 ```{r fig.width=8, fig.height=6}
 ggplot() +
@@ -230,13 +351,4 @@ plot <- ggplot() +
   theme(legend.position = "none")
 
 ggsave("velorouten_plot_highres.jpeg", plot = plot, width = 12, height = 8, dpi = 300)
-```
-
-```{r}
-table(unfaelle$schwere, unfaelle$fahrrd_bet)
-```
-
-```{r}
-ggplot(unfaelle, aes(x= fahrrd_bet, fill = schwere)) +
-  geom_bar(position = "fill")
 ```
