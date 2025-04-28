@@ -477,7 +477,7 @@ average_zaehlung <- zaehlung_selection %>%
   )
 ```
 
-#### Include in Plot
+## Plotting Data (Inclusion of Traffic Count Data)
 
 ```{r}
 unfaelle_clean_velostrasse_relative <- unfaelle_clean %>%
@@ -567,7 +567,7 @@ unfaelle_clean_velostrasse_grouped <- unfaelle_clean_velostrasse_relative %>%
     .groups = "drop"
   )
 
-full_months <- tibble(diff_months_group = seq(-60, 24, by = x))
+full_months <- tibble(diff_months_group = seq(-60, 23, by = x))
 
 unfaelle_prep <- full_months %>%
   left_join(unfaelle_clean_velostrasse_grouped, by = "diff_months_group") %>%
@@ -601,6 +601,8 @@ print(p)
 
 ggsave("Plot_6.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 ```
+
+#### T-Test
 
 ```{r}
 p <- unfaelle_prep %>%
