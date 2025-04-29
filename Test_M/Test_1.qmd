@@ -26,6 +26,7 @@ library(readxl)
 library(scales)
 library(here)
 library(zoo)
+library(viridis)
 ```
 
 ## Loading and Cleaning Data
@@ -33,10 +34,6 @@ library(zoo)
 Loading dataframes (GeoJSON Format)
 
 ```{r}
-#| echo: false
-#| message: false
-#| warning: false
-#| output: false
 
 strassen_wege <- st_read("strassen_wege.geojson")
 velorouten <- st_read("velorouten.geojson")
@@ -631,4 +628,62 @@ unfaelle_testing <- unfaelle_prep %>%
 results <- t.test(relative_count ~ before_after, data = unfaelle_testing)
 
 print(results)
+```
+
+## Absolute Plot
+
+```{r}
+unfaelle_clean_velostrasse_relative <- unfaelle_clean %>%
+  filter(on_velostrasse == TRUE &
+           typ != "Parkierunfall") %>%
+  mutate(date_reference = as.Date(paste0(year, "-", month, "-01")),
+    ym = as.yearmon(date_reference)) %>%
+  left_join(average_zaehlung, by = "ym") %>%
+  mutate(diff = ym_accident - ym,
+    diff_months = round((ym_accident - ym) * 12))
+
+unfaelle_clean_velostrasse_absolute <- unfaelle_clean_velostrasse_relative %>%
+  filter(diff_months >= -60 & diff_months <= 24) %>%
+  mutate(diff_months_group = floor(diff_months / x) * x) %>%
+  mutate(after_transition = diff_months_group > 0,
+         before_transition = diff_months_group < 0) %>%
+  pivot_longer(cols = c(before_transition, after_transition),
+               names_to = 'before_after',
+               values_to = "T_F") %>%
+  subset(T_F == TRUE) %>%
+  mutate(before_after = factor(before_after, levels = c("before_transition", "after_transition")))
+```
+
+```{r}
+p <- unfaelle_clean_velostrasse_absolute %>%
+  group_by(before_after, typ) %>%
+  summarise(count = n()) %>%
+ggplot(aes(before_after, count, fill = typ)) +
+  geom_col(position = "fill") +
+  scale_fill_viridis_d(option = "D") +
+  ylab("Proportion of Cases") +
+  xlab("") +
+  ggtitle("Proportional Distribution of Accidents per 'typ'") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_7.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
+p <- unfaelle_clean_velostrasse_absolute %>%
+  group_by(before_after, schwere) %>%
+  summarise(count = n()) %>%
+ggplot(aes(before_after, count, fill = schwere)) +
+  geom_col(position = "fill") +
+  scale_fill_viridis_d(option = "C") +
+  ylab("Proportion of Cases") +
+  xlab("") +
+  ggtitle("Proportional Distribution of Accidents per 'schwere'") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_8.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 ```
