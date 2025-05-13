@@ -549,13 +549,13 @@ ggplot(aes(before_after, relative_count)) +
 print(p)
 ```
 
-#### Remove Outlier
+#### Only the oldest velostrassen
 
 ```{r}
 x <- 1 # choose size of bins
 
 unfaelle_clean_velostrasse_grouped <- unfaelle_clean_velostrasse_relative %>%
-  filter(diff_months >= -60 & diff_months <= 23) %>%
+  filter(ID %in% c(1,2) & diff_months >= -60 & diff_months <= 84) %>%
   mutate(diff_months_group = floor(diff_months / x) * x) %>%
   group_by(diff_months_group) %>%
   summarise(
@@ -564,7 +564,7 @@ unfaelle_clean_velostrasse_grouped <- unfaelle_clean_velostrasse_relative %>%
     .groups = "drop"
   )
 
-full_months <- tibble(diff_months_group = seq(-60, 23, by = x))
+full_months <- tibble(diff_months_group = seq(-60, 84, by = x))
 
 unfaelle_prep <- full_months %>%
   left_join(unfaelle_clean_velostrasse_grouped, by = "diff_months_group") %>%
@@ -634,8 +634,7 @@ print(results)
 
 ```{r}
 unfaelle_clean_velostrasse_relative <- unfaelle_clean %>%
-  filter(on_velostrasse == TRUE &
-           typ != "Parkierunfall") %>%
+  filter(on_velostrasse == TRUE) %>%
   mutate(date_reference = as.Date(paste0(year, "-", month, "-01")),
     ym = as.yearmon(date_reference)) %>%
   left_join(average_zaehlung, by = "ym") %>%
@@ -660,7 +659,7 @@ p <- unfaelle_clean_velostrasse_absolute %>%
   summarise(count = n()) %>%
 ggplot(aes(before_after, count, fill = typ)) +
   geom_col(position = "fill") +
-  scale_fill_viridis_d(option = "D") +
+  scale_fill_viridis_d(option = "F") +
   ylab("Proportion of Cases") +
   xlab("") +
   ggtitle("Proportional Distribution of Accidents per 'typ'") +
@@ -686,4 +685,42 @@ ggplot(aes(before_after, count, fill = schwere)) +
 print(p)
 
 ggsave("Plot_8.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
+p <- unfaelle_clean_velostrasse_absolute %>%
+  group_by(before_after, fahrrd_bet) %>%
+  summarise(count = n()) %>%
+ggplot(aes(before_after, count, fill = fahrrd_bet)) +
+  geom_col(position = "fill") +
+  scale_fill_viridis_d(option = "C") +
+  ylab("Proportion of Cases") +
+  xlab("") +
+  ggtitle("Proportional Distribution of Accidents per 'fahrrd_bet'") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_9.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
+p <- unfaelle_clean_velostrasse_absolute %>%
+  group_by(before_after, fussgg_bet) %>%
+  summarise(count = n()) %>%
+ggplot(aes(before_after, count, fill = fussgg_bet)) +
+  geom_col(position = "fill") +
+  scale_fill_viridis_d(option = "C") +
+  ylab("Proportion of Cases") +
+  xlab("") +
+  ggtitle("Proportional Distribution of Accidents per 'fussgg_bet'") +
+  theme_minimal()
+
+print(p)
+
+ggsave("Plot_10.jpeg", plot = p, width = 12, height = 8, dpi = 600)
+```
+
+```{r}
+table(unfaelle_clean_velostrasse_absolute$typ, unfaelle_clean_velostrasse_absolute$before_after)
 ```
