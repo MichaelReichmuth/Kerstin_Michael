@@ -27,6 +27,7 @@ library(scales)
 library(here)
 library(zoo)
 library(viridis)
+library(patchwork)
 ```
 
 ## Loading and Cleaning Data
@@ -723,4 +724,193 @@ ggsave("Plot_10.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 
 ```{r}
 table(unfaelle_clean_velostrasse_absolute$typ, unfaelle_clean_velostrasse_absolute$before_after)
+```
+
+## Final
+
+```{r}
+unfaelle_clean_velostrasse_relative <- unfaelle_clean %>%
+  filter(on_velostrasse == TRUE) %>%
+  mutate(date_reference = as.Date(paste0(year, "-", month, "-01")),
+    ym = as.yearmon(date_reference)) %>%
+  left_join(average_zaehlung, by = "ym") %>%
+  mutate(diff = ym_accident - ym,
+    diff_months = round((ym_accident - ym) * 12))
+```
+
+```{r}
+p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
+
+  # Highlight the transition window
+  annotate("rect",
+           xmin = -1, xmax = 1,
+           ymin = -Inf, ymax = Inf,
+           fill = "#DCE1FF", alpha = 0.3) +  # light blue tint
+
+  # Raw points in gray
+  geom_point(size = 0.7, alpha = 0.3, color = "#343434") +
+
+  # Before transition: dark gray
+  geom_smooth(
+    data = subset(unfaelle_prep, before_transition == TRUE),
+    method = "lm", se = FALSE, size = 2,
+    color = "#343434"
+  ) +
+
+  # After transition: vibrant blue
+  geom_smooth(
+    data = subset(unfaelle_prep, after_transition == TRUE),
+    method = "lm", se = FALSE, size = 2,
+    color = "#0003FF"
+  ) +
+
+  # Vertical dashed line at transition (month 0)
+  geom_vline(xintercept = 0, linetype = "dashed", color = "#343434", size = 0.7) +
+
+  # Axis formatting
+  scale_x_continuous(
+    breaks = seq(
+      floor(min(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+      ceiling(max(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+      by = 12
+    ),
+    labels = function(x) paste0(x / 12, "y")
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA)
+  ) +
+
+  # Labels
+  labs(
+    title = "Trends in Accident Rates Before and After Velostreet",
+    subtitle = "Accident rates normalized by cyclist volume across Basel",
+    x = "Years relative to velostreet implementation",
+    y = "Accident rate (%)"
+  ) +
+
+  # Clean theme with strong contrast
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5, color = "#343434"),
+    plot.subtitle = element_text(size = 13, hjust = 0.5, color = "#343434"),
+    axis.title = element_text(face = "bold", color = "#343434"),
+    axis.text = element_text(color = "#343434"),
+    panel.grid.major.x = element_line(color = "gray85", linetype = "dotted"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title.position = "plot"
+  ) +
+
+  # Inline labels (optional)
+  annotate("text", x = -30, y = 0.17, label = "Before", color = "#343434", fontface = "bold", size = 4) +
+  annotate("text", x = 12, y = 0.09, label = "After", color = "#0003FF", fontface = "bold", size = 4)
+
+p + theme(
+  plot.background = element_rect(fill = "transparent", color = NA),
+  panel.background = element_rect(fill = "transparent", color = NA),
+  legend.background = element_rect(fill = "transparent", color = NA),
+  legend.box.background = element_rect(fill = "transparent", color = NA)
+)
+print(p)
+
+ggsave("accident_trends_magazine.png", plot = p, width = 16, height = 9, units = "cm", dpi = 400, limitsize = FALSE)
+```
+
+```{r}
+ggsave(
+  filename = "velostreet_magazine_final.png",
+  plot = p,
+  width = 18,       # cm (or larger for full slide)
+  height = 12,      # cm
+  units = "cm",
+  dpi = 1200,        # very high resolution
+  limitsize = FALSE # allows large plots
+)
+```
+
+#### Schwere Plot
+
+```{r}
+color_palette <- c(
+  "Property Damage Only" = "#343434",
+  "Minor Injury" = "#0003ff",
+  "Severe Injury" = "#dc3545"
+)
+
+p_severity <- ggplot(plot_data, aes(x = x_num, y = proportion, group = schwere_en, color = schwere_en)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  geom_text(
+    aes(x = x_pos, label = scales::percent(proportion, accuracy = 1)),
+    size = 3.2,
+    hjust = ifelse(plot_data$before_after == "before_transition", 1, -0.05),  # Adjust further left or right
+    vjust = 0.5,  # Keep percentages at the same height as the points
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  scale_x_continuous(
+    breaks = c(1, 2),                   # Keep ticks at "Before" and "After"
+    labels = c("Before", "After"),      # Label as Before and After
+    limits = c(0.7, 2.3),               # Further reduce space between "Before" and "After"
+    expand = c(0, 0)                    # No extra padding on the x-axis
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1),
+    expand = expansion(mult = c(0.02, 0.05)),
+    breaks = NULL  # Remove y-axis ticks
+  ) +
+  scale_color_manual(values = color_palette) +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "top",  # Place legend at the bottom
+    legend.title = element_blank(),
+    legend.text = element_text(size = 9, color = "#343434"),
+    legend.direction = "vertical",  # Stack legend vertically
+    axis.title = element_blank(),
+    axis.text.y = element_blank(),  # Remove y-axis text
+    axis.ticks.y = element_blank(),  # Remove y-axis ticks
+    axis.text.x = element_text(color = "#343434", size = 10),
+    panel.grid = element_blank(),
+    plot.margin = margin(5, 10, 5, 5),  # Adjust bottom margin for legend
+    legend.spacing.y = unit(0.3, "cm"),  # Space between legend items
+    legend.box.margin = margin(0, 0, 10, 0),  # Add some margin to the legend box
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)
+  )
+
+# Print the adjusted plot
+print(p_severity)
+```
+
+```{r}
+ggsave(
+  filename = "severity_final.png",
+  plot = p_severity,
+  width = 6,       # cm (or larger for full slide)
+  height = 12,      # cm
+  units = "cm",
+  dpi = 600,        # very high resolution
+  limitsize = FALSE # allows large plots
+)
+```
+
+```{r}
+combined_plot <- p + p_severity + plot_layout(widths = c(3, 1))
+
+print(combined_plot)
+
+ggsave(
+  filename = "test.png",
+  plot = combined_plot,
+  width = 20,       # cm (or larger for full slide)
+  height = 12,      # cm
+  units = "cm",
+  dpi = 600,        # very high resolution
+  limitsize = FALSE, # allows large plots
+  bg = "transparent"  # Transparent background
+)
 ```
