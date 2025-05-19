@@ -739,6 +739,7 @@ unfaelle_clean_velostrasse_relative <- unfaelle_clean %>%
 ```
 
 ```{r}
+# Version 1
 p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
 
   # Highlight the transition window
@@ -806,12 +807,81 @@ p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
   annotate("text", x = -30, y = 0.17, label = "Before", color = "#343434", fontface = "bold", size = 4) +
   annotate("text", x = 12, y = 0.09, label = "After", color = "#0003FF", fontface = "bold", size = 4)
 
-p + theme(
-  plot.background = element_rect(fill = "transparent", color = NA),
-  panel.background = element_rect(fill = "transparent", color = NA),
-  legend.background = element_rect(fill = "transparent", color = NA),
-  legend.box.background = element_rect(fill = "transparent", color = NA)
-)
+print(p)
+
+ggsave("accident_trends_magazine.png", plot = p, width = 16, height = 9, units = "cm", dpi = 400, limitsize = FALSE)
+```
+
+```{r}
+# Version 2
+p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
+
+  # Highlight the transition window
+  annotate("rect",
+           xmin = -1, xmax = 1,
+           ymin = -Inf, ymax = Inf,
+           fill = "#DCE1FF", alpha = 0.3) +  # light blue tint
+
+  # Raw points in gray
+  geom_point(size = 0.7, alpha = 0.3, color = "#343434") +
+
+  # Before transition: dark gray
+  geom_smooth(
+    data = subset(unfaelle_prep, before_transition == TRUE),
+    method = "lm", se = FALSE, size = 2,
+    color = "#343434"
+  ) +
+
+  # After transition: vibrant blue
+  geom_smooth(
+    data = subset(unfaelle_prep, after_transition == TRUE),
+    method = "lm", se = FALSE, size = 2,
+    color = "#0003FF"
+  ) +
+
+  # Vertical dashed line at transition (month 0)
+  geom_vline(xintercept = 0, linetype = "dashed", color = "#343434", size = 0.7) +
+
+  # Axis formatting
+  scale_x_continuous(
+    breaks = seq(
+      floor(min(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+      ceiling(max(unfaelle_clean_velostrasse$diff_months) / 12) * 12,
+      by = 12
+    ),
+    labels = function(x) paste0(x / 12, "y")
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    breaks = c(0,0.05,0.10,0.15),
+    limits = c(0, 0.15)
+  ) +
+
+  # Labels
+  labs(
+    title = "Trends in Accident Rates on Velostrassen Across Basel",
+    subtitle = "Comparison from before and after their implementation",
+    x = "Years relative to implementation",
+    y = "Accident rate (%)"
+  ) +
+
+  # Clean theme with strong contrast
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5, color = "#343434"),
+    plot.subtitle = element_text(size = 13, hjust = 0.5, color = "#343434"),
+    axis.title = element_text(face = "bold", size = 13, color = "#343434"),
+    axis.text = element_text(color = "#343434"),
+    panel.grid.major.x = element_line(color = "gray85", linetype = "dotted"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title.position = "plot"
+  )+
+
+  # Inline labels (optional)
+  annotate("text", x = -30, y = 0.06, label = "Before", color = "#343434", fontface = "bold", size = 4) +
+  annotate("text", x = 12, y = 0.05, label = "After", color = "#0003FF", fontface = "bold", size = 4)
+
 print(p)
 
 ggsave("accident_trends_magazine.png", plot = p, width = 16, height = 9, units = "cm", dpi = 400, limitsize = FALSE)
@@ -834,9 +904,35 @@ ggsave(
 ```{r}
 color_palette <- c(
   "Property Damage Only" = "#343434",
-  "Minor Injury" = "#0003ff",
+  "Minor Injury" = "#f4a300",
   "Severe Injury" = "#dc3545"
 )
+
+plot_data <- unfaelle_clean_velostrasse_absolute %>%
+  mutate(schwere_en = case_when(
+    schwere == "1 Unfall mit Sachschaden" ~ "Property Damage Only",
+    schwere == "2 Unfall mit Leichtverletzten" ~ "Minor Injury",
+    schwere == "3 Unfall mit Schwerverletzten" ~ "Severe Injury",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(schwere_en = factor(
+    schwere_en,
+    levels = c("Property Damage Only", "Minor Injury", "Severe Injury"))
+  ) %>%
+  group_by(before_after) %>%
+  mutate(total_count = n()) %>%
+  ungroup() %>% 
+  group_by(before_after, schwere_en) %>%
+  summarise(count = n(), total_count = first(total_count), .groups = "drop") %>%
+  mutate(
+    proportion = count / total_count,
+    x_num = as.numeric(factor(before_after)),
+    # Reduce the x_pos shift to make the groups closer
+    x_pos = case_when(
+      before_after == "before_transition" ~ x_num - 0.05,  # Even smaller distance
+      before_after == "after_transition" ~ x_num + 0.05   # Even smaller distance
+    )
+  )
 
 p_severity <- ggplot(plot_data, aes(x = x_num, y = proportion, group = schwere_en, color = schwere_en)) +
   geom_line(size = 1) +
