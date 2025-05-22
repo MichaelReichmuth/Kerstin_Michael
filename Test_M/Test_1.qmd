@@ -28,6 +28,8 @@ library(here)
 library(zoo)
 library(viridis)
 library(patchwork)
+library(ggrepel)
+library(chisq.posthoc.test)
 ```
 
 ## Loading and Cleaning Data
@@ -370,7 +372,7 @@ ggsave("Plot_2.2.jpeg", plot = p, width = 12, height = 8, dpi = 600)
 Confounding: Is the increase in accidents due to more cyclists around Basel?
 
 ```{r}
-zaehlung <- read.csv2("../../../zaehlung.csv")
+zaehlung <- read.csv2("../../zaehlung.csv")
 ```
 
 ```{r}
@@ -590,7 +592,7 @@ p <- ggplot(unfaelle_prep, aes(diff_months_group, relative_count)) +
     )
   ) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  ggtitle("Accident rate across all velostrassen (before and after transition)") +
+  ggtitle("Accident rate across all velostrassen (before and after transition) [only older]") +
   xlab("Months relative to velostreet transition") +
   ylab("Accident rate relative to cyclist volume") +
   theme_minimal()
@@ -813,6 +815,29 @@ ggsave("accident_trends_magazine.png", plot = p, width = 16, height = 9, units =
 ```
 
 ```{r}
+x <- 1 # choose size of bins
+
+unfaelle_clean_velostrasse_grouped <- unfaelle_clean_velostrasse_relative %>%
+  filter(diff_months >= -60 & diff_months <= 24) %>%
+  mutate(diff_months_group = floor(diff_months / x) * x) %>%
+  group_by(diff_months_group) %>%
+  summarise(
+    count = n(),
+    relative_count = count / mean(mean_average, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+full_months <- tibble(diff_months_group = seq(-60, 24, by = x))
+
+unfaelle_prep <- full_months %>%
+  left_join(unfaelle_clean_velostrasse_grouped, by = "diff_months_group") %>%
+  mutate(count = replace_na(count, 0),
+         relative_count = replace_na(relative_count, 0)) %>%
+  mutate(after_transition = diff_months_group > 0,
+         before_transition = diff_months_group < 0)
+```
+
+```{r}
 # Version 2
 p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
 
@@ -836,7 +861,7 @@ p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
   geom_smooth(
     data = subset(unfaelle_prep, after_transition == TRUE),
     method = "lm", se = FALSE, size = 2,
-    color = "#0003FF"
+    color = "#343434"
   ) +
 
   # Vertical dashed line at transition (month 0)
@@ -853,13 +878,13 @@ p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
   ) +
   scale_y_continuous(
     labels = percent_format(accuracy = 1),
-    breaks = c(0,0.05,0.10,0.15),
+    breaks = c(0,0.05,0.10, 0.15),
     limits = c(0, 0.15)
   ) +
 
   # Labels
   labs(
-    title = "Trends in Accident Rates on Velostrassen Across Basel",
+    title = "Trends in Accident Rates on Velostrassen across Basel",
     subtitle = "Comparison from before and after their implementation",
     x = "Years relative to implementation",
     y = "Accident rate (%)"
@@ -880,7 +905,7 @@ p <- ggplot(unfaelle_prep, aes(x = diff_months_group, y = relative_count)) +
 
   # Inline labels (optional)
   annotate("text", x = -30, y = 0.06, label = "Before", color = "#343434", fontface = "bold", size = 4) +
-  annotate("text", x = 12, y = 0.05, label = "After", color = "#0003FF", fontface = "bold", size = 4)
+  annotate("text", x = 12, y = 0.05, label = "After", color = "#343434", fontface = "bold", size = 4)
 
 print(p)
 
@@ -902,9 +927,26 @@ ggsave(
 #### Schwere Plot
 
 ```{r}
+tbl <- table(unfaelle_clean_velostrasse_absolute$schwere, unfaelle_clean_velostrasse_absolute$before_after)
+
+print(tbl)
+
+# Run the Chi-Square test
+chi_test <- chisq.test(tbl)
+
+# View results
+print(chi_test)
+
+
+results <- chisq.posthoc.test(tbl, method = "bonferroni")
+
+print(results)
+```
+
+```{r}
 color_palette <- c(
   "Property Damage Only" = "#343434",
-  "Minor Injury" = "#f4a300",
+  "Minor Injury" = "#0003FF",
   "Severe Injury" = "#dc3545"
 )
 
@@ -995,6 +1037,135 @@ ggsave(
 ```
 
 ```{r}
+#V 2
+
+# Define highlight groups
+highlight_groups <- c("Minor Injury", "Severe Injury")
+
+# Define color palette: highlight two, mute others
+color_palette <- c(
+  "Property Damage Only" = "#343434",  # muted gray
+  "Minor Injury" = "#0003FF",          # highlight blue
+  "Severe Injury" = "#dc3545",         # highlight red
+  "Fatal Injury" = "#343434"                 # muted gray
+)
+
+# Define shape palette to distinguish all groups
+shape_palette <- c(
+  "Property Damage Only" = 15,  # square → stable, no injury
+  "Minor Injury" = 17,          # triangle → caution/warning
+  "Severe Injury" = 8,          # asterisk/star → critical/impact
+  "Fatal Injury" = 4                  # cross → symbolic of fatality
+)
+
+# Data transformation
+plot_data <- unfaelle_clean_velostrasse_absolute %>%
+  mutate(schwere_en = case_when(
+    schwere == "1 Unfall mit Sachschaden" ~ "Property Damage Only",
+    schwere == "2 Unfall mit Leichtverletzten" ~ "Minor Injury",
+    schwere == "3 Unfall mit Schwerverletzten" ~ "Severe Injury",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(schwere_en = factor(
+    schwere_en,
+    levels = c("Property Damage Only", "Minor Injury", "Severe Injury"))
+  ) %>%
+  group_by(before_after) %>%
+  mutate(total_count = n()) %>%
+  ungroup() %>%
+  group_by(before_after, schwere_en) %>%
+  summarise(count = n(), total_count = first(total_count), .groups = "drop") %>%
+  mutate(
+    proportion = count / total_count,
+    x_num = as.numeric(factor(before_after)),
+    x_pos = case_when(
+      before_after == "before_transition" ~ x_num - 0.05,
+      before_after == "after_transition" ~ x_num + 0.05
+    )
+  )
+
+# Add 0% "Deaths" line
+deaths_data <- data.frame(
+  before_after = c("before_transition", "after_transition"),
+  schwere_en = "Fatal Injury",
+  count = 0,
+  total_count = plot_data$total_count[match(c("before_transition", "after_transition"), plot_data$before_after)],
+  proportion = 0,
+  x_num = c(1, 2),
+  x_pos = c(0.95, 2.05)
+)
+
+# Combine and re-factor
+plot_data <- bind_rows(plot_data, deaths_data) %>%
+  mutate(schwere_en = factor(
+    schwere_en,
+    levels = c("Property Damage Only", "Minor Injury", "Severe Injury", "Fatal Injury"))
+  )
+
+# Plot
+p_severity <- ggplot(plot_data, aes(x = x_num, y = proportion, group = schwere_en)) +
+  geom_line(aes(color = schwere_en), size = 1) +
+  geom_point(aes(color = schwere_en, shape = schwere_en), size = 3) +
+  geom_text(
+    aes(x = x_pos, label = scales::percent(proportion, accuracy = 1), color = schwere_en),
+    size = 3.2,
+    hjust = ifelse(plot_data$before_after == "before_transition", 1, -0.05),
+    vjust = 0.5,
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  scale_x_continuous(
+    breaks = c(1, 2),
+    labels = c("Before", "After"),
+    limits = c(0.7, 2.3),
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1),
+    expand = expansion(mult = c(0.07, 0.05)),  # give space for 0%
+    breaks = NULL
+  ) +
+  scale_color_manual(values = color_palette) +
+  scale_shape_manual(values = shape_palette) +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 9, color = "#343434"),
+    legend.direction = "vertical",
+    axis.title = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_line(color = "#343434", size = 1),
+    axis.text.x = element_text(color = "#343434", size = 10),
+    panel.grid = element_blank(),
+    plot.margin = margin(5, 10, 5, 5),
+    legend.spacing.y = unit(0.3, "cm"),
+    legend.box.margin = margin(0, 0, 10, 0),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)
+  )
+
+# Display the plot
+print(p_severity)
+```
+
+```{r}
+ggsave(
+  filename = "severity_final_2.png",
+  plot = p_severity,
+  width = 6,       # cm (or larger for full slide)
+  height = 12,      # cm
+  units = "cm",
+  dpi = 600,        # very high resolution
+  limitsize = FALSE # allows large plots
+)
+```
+
+```{r}
 combined_plot <- p + p_severity + plot_layout(widths = c(3, 1))
 
 print(combined_plot)
@@ -1008,5 +1179,114 @@ ggsave(
   dpi = 600,        # very high resolution
   limitsize = FALSE, # allows large plots
   bg = "transparent"  # Transparent background
+)
+```
+
+## Absolute Typ
+
+```{r}
+# Step 1: Factorize 'typ'
+unfaelle_clean_velostrasse_absolute <- unfaelle_clean_velostrasse_absolute %>%
+  mutate(typ = as.factor(typ))
+
+# Step 2: Calculate total counts per period
+total_counts <- unfaelle_clean_velostrasse_absolute %>%
+  count(before_after, name = "total_count")
+
+# Step 3: Count occurrences of each 'typ' per period
+plot_data_typ <- unfaelle_clean_velostrasse_absolute %>%
+  count(before_after, typ, name = "count") %>%
+  complete(before_after, typ, fill = list(count = 0)) %>%  # fill missing combos with 0
+  left_join(total_counts, by = "before_after") %>%         # add total count
+  mutate(
+    proportion = count / total_count,
+    x_num = as.numeric(factor(before_after, levels = c("before_transition", "after_transition"))),
+    x_pos = case_when(
+      before_after == "before_transition" ~ x_num - 0.05,
+      before_after == "after_transition" ~ x_num + 0.05
+    )
+  )
+
+
+
+p_typ <- ggplot(plot_data_typ, aes(x = x_num, y = proportion, group = typ)) +
+  geom_line(aes(color = typ), size = 1) +
+  geom_point(aes(color = typ), size = 3) +
+  
+  # Left-side percentages
+  geom_text(
+    data = subset(plot_data_typ, before_after == "before_transition"),
+    aes(x = x_pos, label = percent(proportion, accuracy = 1), color = typ),
+    size = 3.2,
+    hjust = 1,
+    vjust = 0.5,
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  
+  # Right-side percentages and labels
+  geom_text_repel(
+    data = subset(plot_data_typ, before_after == "after_transition"),
+    aes(x = x_pos, label = paste0(percent(proportion, accuracy = 1), "  ", typ), color = typ),
+    size = 3.2,
+    hjust = 0,
+    direction = "y",
+    nudge_x = 0.15,  # more push to the right
+    segment.color = "#343434",
+    segment.size = 0.3,
+    min.segment.length = 0,
+    box.padding = 0.3,
+    max.overlaps = Inf,
+    show.legend = FALSE
+  ) +
+  
+  scale_x_continuous(
+    breaks = c(1, 2),
+    labels = c("Before", "After"),
+    limits = c(0.7, 3),  # more space for labels
+    expand = c(0, 0)
+  ) +
+  
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, 1),
+    expand = expansion(mult = c(0.07, 0.05)),
+    breaks = NULL
+  ) +
+  
+  scale_color_viridis_d(option = "D", end = 0.8) +
+  
+  coord_cartesian(clip = "off") +
+  
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "none",
+    axis.title = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_line(color = "#343434", size = 1),
+    panel.grid = element_blank(),
+    plot.margin = margin(5, 100, 5, 5)  # increased right margin
+  )
+
+p_typ <- p_typ + 
+  theme(
+    plot.background = element_rect(fill = "#efefef", color = NA),
+    panel.background = element_rect(fill = "#efefef", color = NA)
+  )
+
+print(p_typ)
+```
+
+```{r}
+ggsave(
+  filename = "typ_final.png",
+  plot = p_typ,
+  width = 18,       # cm (or larger for full slide)
+  height = 24,      # cm
+  units = "cm",
+  dpi = 600,        # very high resolution
+  limitsize = FALSE, # allows large plots
+  bg = "transparent" # <<--- Das macht den Hintergrund wirklich transparent
 )
 ```
